@@ -59,15 +59,15 @@ client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-// ====== PROCESS LUA FUNCTION WITH SAFE FALLBACK ======
+// ====== PROCESS LUA FUNCTION WITH FLEXIBLE AI PARSING ======
 async function processLua(interaction, brokenText) {
   let interval;
   try {
     // Preprocess input
     brokenText = brokenText
-      .replace(/[“”]/g, '"')       // curly quotes → straight quotes
-      .replace(/\s+\(/g, '(')      // remove space before parentheses
-      .replace(/\u200B/g, '')      // remove zero-width spaces
+      .replace(/[“”]/g, '"')
+      .replace(/\s+\(/g, '(')
+      .replace(/\u200B/g, '')
       .trim();
 
     // Log to webhook
@@ -90,7 +90,7 @@ async function processLua(interaction, brokenText) {
       messages: [
         {
           role: "system",
-          content: "You are a Lua programmer. You need to fix this Lua file EVEN IF IT'S NOT 100% Lua. Return a working Lua script AND a clear explanation of what was broken and what you fixed. Do not include anything else."
+          content: "You are a Lua programmer. You must fix this Lua file EVEN IF IT'S NOT 100% Lua. Return a working Lua script AND a clear explanation of what was broken and what you fixed. Only return Lua code and the explanation."
         },
         { role: "user", content: brokenText }
       ]
@@ -102,13 +102,18 @@ async function processLua(interaction, brokenText) {
     let aiResponse = ai.choices[0].message.content.trim();
     aiResponse = aiResponse.replace(/```lua/g, '').replace(/```/g, '').trim();
 
-    // Split into code and explanation
-    let [fixedText, explanation] = aiResponse.split(/### Explanation/i);
+    // Flexible parsing: try to split explanation if present
+    let fixedText = aiResponse;
+    let explanation = "No explanation provided.";
+    const explanationIndex = aiResponse.toLowerCase().lastIndexOf("explanation");
+    if (explanationIndex !== -1) {
+      fixedText = aiResponse.slice(0, explanationIndex).trim();
+      explanation = aiResponse.slice(explanationIndex).trim();
+    }
+
+    // Fallback if AI output is empty
     if (!fixedText || fixedText.length < 1) fixedText = brokenText;
     if (!explanation || explanation.length < 1) explanation = "No explanation provided.";
-
-    fixedText = fixedText.trim();
-    explanation = explanation.trim();
 
     // Prepare attachments
     const brokenFile = new AttachmentBuilder(Buffer.from(brokenText, 'utf-8'), { name: 'BROKEN.lua' });
@@ -125,10 +130,10 @@ async function processLua(interaction, brokenText) {
     clearInterval(interval);
     console.error(err);
 
-    // Safe fallback: return original script
+    // Safe fallback: always return BROKEN.lua
     const brokenFile = new AttachmentBuilder(Buffer.from(brokenText, 'utf-8'), { name: 'BROKEN.lua' });
     await interaction.editReply({
-      content: "⚠️ AI failed to fix the script. Original file attached:",
+      content: "⚠️ AI failed to produce output. Original file attached:",
       files: [brokenFile]
     }).catch(()=>{});
   }
