@@ -39,17 +39,16 @@ const commands = [
     )
 ].map(cmd => cmd.toJSON());
 
-// ====== REGISTER COMMANDS TO GUILD ======
+// ====== REGISTER COMMANDS ======
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 (async () => {
   try {
     console.log("Clearing old guild commands...");
     await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: [] });
-
-    console.log("Registering slash commands to guild...");
+    console.log("Registering slash commands...");
     await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
-    console.log("Guild commands registered!");
+    console.log("Commands registered!");
   } catch (err) {
     console.error(err);
   }
@@ -60,15 +59,15 @@ client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-// ====== PROCESS LUA FUNCTION WITH EXPLANATION ======
+// ====== PROCESS LUA FUNCTION WITH SAFE FALLBACK ======
 async function processLua(interaction, brokenText) {
   let interval;
   try {
-    // Preprocess brokenText
+    // Preprocess input
     brokenText = brokenText
-      .replace(/[“”]/g, '"')
-      .replace(/\s+\(/g, '(')
-      .replace(/\u200B/g, '')
+      .replace(/[“”]/g, '"')       // curly quotes → straight quotes
+      .replace(/\s+\(/g, '(')      // remove space before parentheses
+      .replace(/\u200B/g, '')      // remove zero-width spaces
       .trim();
 
     // Log to webhook
@@ -85,13 +84,13 @@ async function processLua(interaction, brokenText) {
       i++;
     }, 1000);
 
-    // AI call: Fix code and give explanation
+    // AI call: fix Lua and provide explanation
     const ai = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
-          content: "You are a Lua programmer. You must fix this Lua file EVEN IF IT'S NOT 100% Lua. Return a working Lua script AND a separate explanation of what was broken and what you fixed. Output both clearly."
+          content: "You are a Lua programmer. You need to fix this Lua file EVEN IF IT'S NOT 100% Lua. Return a working Lua script AND a clear explanation of what was broken and what you fixed. Do not include anything else."
         },
         { role: "user", content: brokenText }
       ]
@@ -101,16 +100,15 @@ async function processLua(interaction, brokenText) {
 
     // Extract AI response
     let aiResponse = ai.choices[0].message.content.trim();
+    aiResponse = aiResponse.replace(/```lua/g, '').replace(/```/g, '').trim();
 
-    // Split AI response: expect it to contain the code and explanation
-    // We'll assume AI separates them with a header like "### Explanation"
+    // Split into code and explanation
     let [fixedText, explanation] = aiResponse.split(/### Explanation/i);
-    if (!fixedText) fixedText = brokenText;
-    if (!explanation) explanation = "No explanation provided.";
+    if (!fixedText || fixedText.length < 1) fixedText = brokenText;
+    if (!explanation || explanation.length < 1) explanation = "No explanation provided.";
 
-    // Clean code output
-    fixedText = fixedText.replace(/```lua/g, '').replace(/```/g, '').trim();
-    explanation = explanation.replace(/```/g, '').trim();
+    fixedText = fixedText.trim();
+    explanation = explanation.trim();
 
     // Prepare attachments
     const brokenFile = new AttachmentBuilder(Buffer.from(brokenText, 'utf-8'), { name: 'BROKEN.lua' });
@@ -126,7 +124,13 @@ async function processLua(interaction, brokenText) {
   } catch (err) {
     clearInterval(interval);
     console.error(err);
-    interaction.editReply("❌ Error fixing script. Make sure the file/code is valid Lua.").catch(()=>{});
+
+    // Safe fallback: return original script
+    const brokenFile = new AttachmentBuilder(Buffer.from(brokenText, 'utf-8'), { name: 'BROKEN.lua' });
+    await interaction.editReply({
+      content: "⚠️ AI failed to fix the script. Original file attached:",
+      files: [brokenFile]
+    }).catch(()=>{});
   }
 }
 
@@ -134,7 +138,6 @@ async function processLua(interaction, brokenText) {
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  // /fixfile
   if (interaction.commandName === 'fixfile') {
     const file = interaction.options.getAttachment('file');
     if (!file.name.endsWith('.lua') && !file.name.endsWith('.txt')) {
@@ -150,7 +153,6 @@ client.on('interactionCreate', async interaction => {
     }
   }
 
-  // /fixcode
   if (interaction.commandName === 'fixcode') {
     const code = interaction.options.getString('code');
     if (code.length > 6000) {
