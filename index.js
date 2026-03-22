@@ -45,7 +45,7 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
 (async () => {
   try {
     console.log("Clearing old guild commands...");
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: [] }); // ✅ Clears all old commands
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: [] });
 
     console.log("Registering slash commands to guild...");
     await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
@@ -78,11 +78,14 @@ async function processLua(interaction, brokenText) {
       i++;
     }, 1000);
 
-    // AI fix
+    // AI fix (updated prompt for valid scripts)
     const ai = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: "Return ONLY the fixed Roblox Lua script. No explanation, no markdown." },
+        {
+          role: "system",
+          content: "You are a Lua fixer. Return a corrected Roblox Lua script. If the script is already valid, return it exactly as-is. Do not add explanations or markdown."
+        },
         { role: "user", content: brokenText }
       ]
     });
