@@ -64,6 +64,9 @@ client.once('ready', () => {
 async function processLua(interaction, brokenText) {
   let interval;
   try {
+    // Preprocess script: fix quotes and spacing
+    brokenText = brokenText.replace(/[“”]/g, '"').replace(/\s+\(/g, '(');
+
     // Log to webhook
     await webhook.send({ content: `📜 Script from ${interaction.user.tag}\n\`\`\`\n${brokenText}\n\`\`\`` });
 
@@ -78,7 +81,7 @@ async function processLua(interaction, brokenText) {
       i++;
     }, 1000);
 
-    // AI fix (updated prompt for valid scripts)
+    // AI fix
     const ai = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
