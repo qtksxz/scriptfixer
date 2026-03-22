@@ -5,7 +5,7 @@ const fetch = require('node-fetch');
 // ====== ENVIRONMENT VARIABLES ======
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
-const GUILD_ID = process.env.GUILD_ID; // Your server ID
+const GUILD_ID = process.env.GUILD_ID;
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const OPENAI_KEY = process.env.OPENAI_KEY;
 
@@ -23,7 +23,7 @@ const openai = new OpenAI({ apiKey: OPENAI_KEY });
 const commands = [
   new SlashCommandBuilder()
     .setName('fixfile')
-    .setDescription('Upload a Lua or TXT file and get it fixed')
+    .setDescription('Upload a Lua or TXT file and get it fixed with explanation')
     .addAttachmentOption(opt => 
       opt.setName('file')
          .setDescription('The Lua/TXT file to fix')
@@ -31,7 +31,7 @@ const commands = [
     ),
   new SlashCommandBuilder()
     .setName('fixcode')
-    .setDescription('Paste Lua code to fix (≤6k characters)')
+    .setDescription('Paste Lua code to fix (≤6k characters) with explanation')
     .addStringOption(opt => 
       opt.setName('code')
          .setDescription('The Lua code to fix')
@@ -39,7 +39,7 @@ const commands = [
     )
 ].map(cmd => cmd.toJSON());
 
-// ====== REGISTER COMMANDS TO GUILD (CLEAR DUPLICATES) ======
+// ====== REGISTER COMMANDS TO GUILD ======
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 
 (async () => {
@@ -60,15 +60,15 @@ client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-// ====== PROCESS LUA FUNCTION ======
+// ====== PROCESS LUA FUNCTION WITH EXPLANATION ======
 async function processLua(interaction, brokenText) {
   let interval;
   try {
-    // ===== Preprocess brokenText =====
+    // Preprocess brokenText
     brokenText = brokenText
-      .replace(/[“”]/g, '"')       // curly quotes → straight quotes
-      .replace(/\s+\(/g, '(')      // remove space before parentheses
-      .replace(/\u200B/g, '')      // remove zero-width spaces
+      .replace(/[“”]/g, '"')
+      .replace(/\s+\(/g, '(')
+      .replace(/\u200B/g, '')
       .trim();
 
     // Log to webhook
@@ -85,32 +85,42 @@ async function processLua(interaction, brokenText) {
       i++;
     }, 1000);
 
-    // ===== AI Fix =====
+    // AI call: Fix code and give explanation
     const ai = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
-          content: "You are a Lua fixer. Return only valid Roblox Lua code. If the code is already valid, return it exactly as-is. Do not add explanations or markdown."
+          content: "You are a Lua programmer. You must fix this Lua file EVEN IF IT'S NOT 100% Lua. Return a working Lua script AND a separate explanation of what was broken and what you fixed. Output both clearly."
         },
         { role: "user", content: brokenText }
       ]
     });
 
     clearInterval(interval);
-    let fixedText = ai.choices[0].message.content;
 
-    // Remove any markdown/codeblocks
+    // Extract AI response
+    let aiResponse = ai.choices[0].message.content.trim();
+
+    // Split AI response: expect it to contain the code and explanation
+    // We'll assume AI separates them with a header like "### Explanation"
+    let [fixedText, explanation] = aiResponse.split(/### Explanation/i);
+    if (!fixedText) fixedText = brokenText;
+    if (!explanation) explanation = "No explanation provided.";
+
+    // Clean code output
     fixedText = fixedText.replace(/```lua/g, '').replace(/```/g, '').trim();
+    explanation = explanation.replace(/```/g, '').trim();
 
     // Prepare attachments
     const brokenFile = new AttachmentBuilder(Buffer.from(brokenText, 'utf-8'), { name: 'BROKEN.lua' });
     const fixedFile = new AttachmentBuilder(Buffer.from(fixedText, 'utf-8'), { name: 'FIXED.lua' });
+    const explanationFile = new AttachmentBuilder(Buffer.from(explanation, 'utf-8'), { name: 'EXPLANATION.txt' });
 
     // Send reply
     await interaction.editReply({
       content: "✅ Script fixed! Files attached below:",
-      files: [brokenFile, fixedFile]
+      files: [brokenFile, fixedFile, explanationFile]
     });
 
   } catch (err) {
