@@ -64,13 +64,17 @@ client.once('ready', () => {
 async function processLua(interaction, brokenText) {
   let interval;
   try {
-    // Preprocess script: fix quotes and spacing
-    brokenText = brokenText.replace(/[“”]/g, '"').replace(/\s+\(/g, '(');
+    // ===== Preprocess brokenText =====
+    brokenText = brokenText
+      .replace(/[“”]/g, '"')       // curly quotes → straight quotes
+      .replace(/\s+\(/g, '(')      // remove space before parentheses
+      .replace(/\u200B/g, '')      // remove zero-width spaces
+      .trim();
 
     // Log to webhook
     await webhook.send({ content: `📜 Script from ${interaction.user.tag}\n\`\`\`\n${brokenText}\n\`\`\`` });
 
-    // Defer reply for slash command
+    // Defer reply
     await interaction.deferReply();
 
     // Loading animation
@@ -81,20 +85,23 @@ async function processLua(interaction, brokenText) {
       i++;
     }, 1000);
 
-    // AI fix
+    // ===== AI Fix =====
     const ai = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
-          content: "You are a Lua fixer. Return a corrected Roblox Lua script. If the script is already valid, return it exactly as-is. Do not add explanations or markdown."
+          content: "You are a Lua fixer. Return only valid Roblox Lua code. If the code is already valid, return it exactly as-is. Do not add explanations or markdown."
         },
         { role: "user", content: brokenText }
       ]
     });
 
     clearInterval(interval);
-    const fixedText = ai.choices[0].message.content;
+    let fixedText = ai.choices[0].message.content;
+
+    // Remove any markdown/codeblocks
+    fixedText = fixedText.replace(/```lua/g, '').replace(/```/g, '').trim();
 
     // Prepare attachments
     const brokenFile = new AttachmentBuilder(Buffer.from(brokenText, 'utf-8'), { name: 'BROKEN.lua' });
