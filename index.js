@@ -7,12 +7,18 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const OPENAI_KEY = process.env.OPENAI_KEY;
 
+// ===== CHECK FOR MISSING VARIABLES =====
+if (!TOKEN || !CLIENT_ID || !WEBHOOK_URL || !OPENAI_KEY) {
+  console.error("❌ One or more environment variables are missing!");
+  process.exit(1); // Stops the bot if any key is missing
+}
+
 // ===== SETUP =====
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const webhook = new WebhookClient({ url: WEBHOOK_URL });
 const openai = new OpenAI({ apiKey: OPENAI_KEY });
 
-// ===== COMMAND =====
+// ===== SLASH COMMAND =====
 const commands = [
   new SlashCommandBuilder()
     .setName('fix-script')
@@ -55,20 +61,14 @@ client.on('interactionCreate', async interaction => {
       });
     }
 
-    // Send to webhook (log)
+    // Send script to webhook (logs)
     await webhook.send({
       content: `📜 Script from ${interaction.user.tag}\n\`\`\`lua\n${code}\n\`\`\``
     });
 
-    // Loading message
-    await interaction.reply("⏳ Fixing the script... hold on.");
-
-    const loadingStates = [
-      "⏳ Fixing the script.",
-      "⏳ Fixing the script..",
-      "⏳ Fixing the script..."
-    ];
-
+    // Loading animation
+    await interaction.reply("⏳ Fixing the script... hold on");
+    const loadingStates = ["⏳ Fixing the script.", "⏳ Fixing the script..", "⏳ Fixing the script..."];
     let i = 0;
     const interval = setInterval(() => {
       interaction.editReply(loadingStates[i % loadingStates.length]);
@@ -76,7 +76,7 @@ client.on('interactionCreate', async interaction => {
     }, 1000);
 
     try {
-      // Call OpenAI API
+      // AI fix
       const ai = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
@@ -92,19 +92,11 @@ client.on('interactionCreate', async interaction => {
       });
 
       clearInterval(interval);
-
       const fixedCode = ai.choices[0].message.content;
 
-      // Create file attachments
-      const fixedFile = new AttachmentBuilder(
-        Buffer.from(fixedCode, 'utf-8'),
-        { name: 'FIXED.lua' }
-      );
-
-      const brokenFile = new AttachmentBuilder(
-        Buffer.from(code, 'utf-8'),
-        { name: 'BROKEN.lua' }
-      );
+      // Create files
+      const fixedFile = new AttachmentBuilder(Buffer.from(fixedCode, 'utf-8'), { name: 'FIXED.lua' });
+      const brokenFile = new AttachmentBuilder(Buffer.from(code, 'utf-8'), { name: 'BROKEN.lua' });
 
       // Send files
       await interaction.editReply({
@@ -115,7 +107,7 @@ client.on('interactionCreate', async interaction => {
     } catch (err) {
       clearInterval(interval);
       console.error(err);
-      await interaction.editReply("❌ Error fixing script.");
+      await interaction.editReply("❌ Error fixing script. Check logs!");
     }
   }
 });
