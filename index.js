@@ -5,10 +5,11 @@ const fetch = require('node-fetch');
 // ====== ENVIRONMENT VARIABLES ======
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID; // Add your server ID here
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const OPENAI_KEY = process.env.OPENAI_KEY;
 
-if (!TOKEN || !CLIENT_ID || !WEBHOOK_URL || !OPENAI_KEY) {
+if (!TOKEN || !CLIENT_ID || !GUILD_ID || !WEBHOOK_URL || !OPENAI_KEY) {
   console.error("❌ Missing environment variables!");
   process.exit(1);
 }
@@ -18,7 +19,7 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const webhook = { send: async (opts) => await fetch(WEBHOOK_URL, { method: 'POST', body: JSON.stringify(opts), headers: { 'Content-Type': 'application/json' }}) };
 const openai = new OpenAI({ apiKey: OPENAI_KEY });
 
-// ====== REGISTER SLASH COMMANDS ======
+// ====== SLASH COMMANDS ======
 const commands = [
   new SlashCommandBuilder()
     .setName('fixfile')
@@ -38,27 +39,28 @@ const commands = [
     )
 ].map(cmd => cmd.toJSON());
 
+// ====== REGISTER COMMANDS TO GUILD ======
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 (async () => {
   try {
-    console.log("Registering slash commands...");
-    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-    console.log("Commands registered!");
+    console.log("Registering slash commands to guild...");
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
+    console.log("Guild commands registered!");
   } catch (err) {
     console.error(err);
   }
 })();
 
-// ====== READY ======
+// ====== CLIENT READY ======
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-// ====== MAIN PROCESS FUNCTION ======
+// ====== PROCESS LUA FUNCTION ======
 async function processLua(interaction, brokenText) {
   let interval;
   try {
-    // Log the script to webhook
+    // Log to webhook
     await webhook.send({ content: `📜 Script from ${interaction.user.tag}\n\`\`\`\n${brokenText}\n\`\`\`` });
 
     // Defer reply for slash command
@@ -72,7 +74,7 @@ async function processLua(interaction, brokenText) {
       i++;
     }, 1000);
 
-    // AI fixes the script
+    // AI fix
     const ai = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -84,11 +86,11 @@ async function processLua(interaction, brokenText) {
     clearInterval(interval);
     const fixedText = ai.choices[0].message.content;
 
-    // Create attachments
+    // Prepare attachments
     const brokenFile = new AttachmentBuilder(Buffer.from(brokenText, 'utf-8'), { name: 'BROKEN.lua' });
     const fixedFile = new AttachmentBuilder(Buffer.from(fixedText, 'utf-8'), { name: 'FIXED.lua' });
 
-    // Send final reply with attachments
+    // Send reply
     await interaction.editReply({
       content: "✅ Script fixed! Files attached below:",
       files: [brokenFile, fixedFile]
@@ -131,4 +133,5 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
+// ====== LOGIN ======
 client.login(TOKEN);
