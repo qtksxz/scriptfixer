@@ -5,7 +5,7 @@ const fetch = require('node-fetch');
 // ====== ENVIRONMENT VARIABLES ======
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
-const GUILD_ID = process.env.GUILD_ID; // Add your server ID here
+const GUILD_ID = process.env.GUILD_ID; // Your server ID
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const OPENAI_KEY = process.env.OPENAI_KEY;
 
@@ -39,10 +39,14 @@ const commands = [
     )
 ].map(cmd => cmd.toJSON());
 
-// ====== REGISTER COMMANDS TO GUILD ======
+// ====== REGISTER COMMANDS TO GUILD (CLEAR DUPLICATES) ======
 const rest = new REST({ version: '10' }).setToken(TOKEN);
+
 (async () => {
   try {
+    console.log("Clearing old guild commands...");
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: [] }); // ✅ Clears all old commands
+
     console.log("Registering slash commands to guild...");
     await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
     console.log("Guild commands registered!");
